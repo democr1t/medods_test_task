@@ -1,0 +1,46 @@
+version: '3.8'
+
+networks:
+  auth:
+    driver: bridge
+
+services:
+  postgres:
+    image: postgres:latest
+    container_name: medods_test
+    networks:
+      - auth  # Добавлено подключение к сети
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: auth
+    ports:
+      - "8888:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - postgres_data:/var/lib/postgresql/data  # Добавлен volume для сохранения данных
+
+  auth-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    networks:
+      - auth
+    hostname: auth-api
+    platform: linux/amd64
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: 8080
+      DSN: "host=postgres user=postgres password=postgres dbname=auth port=5432 sslmode=disable"
+      SECRET: "b4f3d6bf694265845787912b16489d717d1ad2783249f0714597b14243889bcaadb9ad80268b26e8d0b8b5d5a2b80703070f61ee2ce529d17195d71fd8c8d78e"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped  # Добавлено автоматическое перезапускание при падении
+
+volumes:
+  postgres_data:  # Объявление volume для PostgreSQL
