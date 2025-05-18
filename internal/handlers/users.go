@@ -1,11 +1,16 @@
 package handlers
 
 import (
+	"fmt"
 	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"log"
+	"log/slog"
 	"medods_test_task/models"
 	"net/http"
+	"os"
 )
 
 // CreateUserHandler создает нового пользователя
@@ -61,5 +66,37 @@ func GetUserHandler(db *gorm.DB) gin.HandlerFunc {
 		}
 
 		c.JSON(http.StatusOK, user)
+	}
+}
+
+func GetMyIDHandler(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		t, err := c.Cookie("access")
+
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Access cookie not present"})
+		}
+
+		token, err := jwt.ParseWithClaims(t, &myClaims{}, func(token *jwt.Token) (interface{}, error) {
+			// hmacSampleSecret is a []byte containing your secret, e.g. []byte("my_secret_key")
+			return []byte(os.Getenv("SECRET")), nil
+		}, jwt.WithValidMethods([]string{jwt.SigningMethodHS512.Alg()}))
+
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		if claims, ok := token.Claims.(*myClaims); ok {
+			fmt.Println(claims)
+			c.JSON(http.StatusOK, gin.H{
+				"user":      claims.Subject,
+				"ip":        claims.Ip,
+				"useragent": claims.USERAGENT,
+			})
+		} else {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token"})
+			slog.Debug(err.Error())
+		}
+
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
+	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 	"log/slog"
 	"medods_test_task/models"
@@ -12,59 +13,60 @@ import (
 	"time"
 )
 
-// TokenMaker интерфейс для создания токенов
+type myClaims struct {
+	Ip        string `json:"ip"`
+	USERAGENT string `json:"useragent"`
+	jwt.RegisteredClaims
+}
+
 type TokenMaker interface {
-	CreateToken(userID uuid.UUID, email string, isAdmin bool, duration time.Duration) (string, *jwt.RegisteredClaims, error)
+	CreateToken(userID string, ip string, USERAGENT string, duration time.Duration) (string, error)
 }
 
-// TokenResponse структура ответа с токенами
 type TokenResponse struct {
-	AccessToken           string    `json:"access_token"`
-	RefreshToken          string    `json:"refresh_token"`
-	AccessTokenExpiresAt  time.Time `json:"access_token_expires_at"`
-	RefreshTokenExpiresAt time.Time `json:"refresh_token_expires_at"`
-	SessionID             int       `json:"session_id"`
+	AccessToken  string `json:"access_token"`
+	RefreshToken string `json:"refresh_token"`
 }
 
-// JWTMaker реализация TokenMaker
 type JWTMaker struct {
 	SecretKey string
 }
 
-func (maker *JWTMaker) CreateToken(userID uuid.UUID, email string, isAdmin bool, duration time.Duration) (string, *jwt.RegisteredClaims, error) {
+func (maker *JWTMaker) CreateToken(userID string, ip string, USERAGENT string, duration time.Duration) (string, error) {
 
-	claims := &jwt.RegisteredClaims{
-		ID:        uuid.New().String(),
-		Subject:   userID.String(),
-		IssuedAt:  jwt.NewNumericDate(time.Now()),
-		ExpiresAt: jwt.NewNumericDate(time.Now().Add(duration)),
+	claims := &myClaims{
+		Ip:        ip,
+		USERAGENT: USERAGENT,
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   userID,
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(duration)),
+		},
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS512, claims)
 	tokenString, err := token.SignedString([]byte(maker.SecretKey))
 
 	if err != nil {
-		return "", nil, err
+		return "", err
 	}
 
-	return tokenString, claims, nil
+	return tokenString, nil
 }
 
-// TokensHandler создает пару токенов для пользователя
-func TokensHandler(db *gorm.DB, tokenMaker TokenMaker) gin.HandlerFunc {
+// CreateGetTokensHandler создает пару токенов для пользователя
+func CreateGetTokensHandler(db *gorm.DB, tokenMaker TokenMaker) gin.HandlerFunc {
 	slog.Debug("tokens handler initialized")
 	return func(c *gin.Context) {
-		// Получаем userID из параметров запроса
-		userID := c.Param("user_id")
 
-		// Парсим UUID
+		userID := c.Param("user_id")
 		uuidUserID, err := uuid.Parse(userID)
+
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user ID format"})
 			return
 		}
 
-		// Проверяем существование пользователя
 		var user models.User
 		if err := db.First(&user, "id = ?", uuidUserID).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -75,44 +77,59 @@ func TokensHandler(db *gorm.DB, tokenMaker TokenMaker) gin.HandlerFunc {
 			return
 		}
 
-		// Создаем access token (15 минут)
-		accessToken, accessClaims, err := tokenMaker.CreateToken(user.ID, "", false, 15*time.Minute)
+		var existedToken models.RefreshTokens
+
+		if err := db.First(&existedToken, "user_id = ?", uuidUserID).Error; err == nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "tokens already exists, you need to /logout first"})
+			return
+		}
+
+		accessToken, err := tokenMaker.CreateToken(userID, c.ClientIP(), c.Request.UserAgent(), 15*time.Minute)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create access token"})
 			return
 		}
 
-		// Создаем refresh token (24 часа)
-		refreshToken, refreshClaims, err := tokenMaker.CreateToken(user.ID, "", false, 24*time.Hour)
+		refreshToken, err := tokenMaker.CreateToken(userID, c.ClientIP(), c.Request.UserAgent(), 24*time.Hour)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create refresh token"})
 			return
 		}
 
-		// Создаем сессию в базе данных
-		session := models.Session{
-			RefreshToken: refreshToken,
-			UserID:       user.ID,
-			ExpiresAt:    refreshClaims.ExpiresAt.Time,
+		refreshTokenHash, err := bcrypt.GenerateFromPassword([]byte(refreshToken), bcrypt.DefaultCost)
+
+		if err != nil {
+			slog.Error("Failed to hash refresh token", "err", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create refresh token"})
 		}
 
-		c.SetCookie("access", accessToken, 15, "/", "", false, true)
+		tokens := models.RefreshTokens{
+			RefreshToken: string(refreshTokenHash),
+			UserID:       user.ID,
+		}
+
+		c.SetCookie("access", accessToken, 15*60, "/", "", true, true)
+		c.SetCookie("refresh", refreshToken, 3600*60, "/", "", true, true)
 		c.SetSameSite(http.SameSiteLaxMode)
 
-		if err := db.Create(&session).Error; err != nil {
+		if err := db.Create(&tokens).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create session"})
 			return
 		}
 
 		// Формируем ответ
 		response := TokenResponse{
-			AccessToken:           accessToken,
-			RefreshToken:          refreshToken,
-			AccessTokenExpiresAt:  accessClaims.ExpiresAt.Time,
-			RefreshTokenExpiresAt: refreshClaims.ExpiresAt.Time,
-			SessionID:             session.ID,
+			AccessToken:  accessToken,
+			RefreshToken: refreshToken,
 		}
 
 		c.JSON(http.StatusOK, response)
+	}
+}
+
+func CreateLogoutHandler(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.SetCookie("access", "", 0, "/", "", false, true)
+		c.JSON(200, gin.H{"message": "logout successfully"})
 	}
 }
