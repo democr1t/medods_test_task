@@ -6,7 +6,6 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
-	"log"
 	"log/slog"
 	"medods_test_task/models"
 	"net/http"
@@ -77,16 +76,16 @@ func GetMyIDHandler(db *gorm.DB) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Access cookie not present"})
 		}
 
-		token, err := jwt.ParseWithClaims(t, &myClaims{}, func(token *jwt.Token) (interface{}, error) {
+		token, err := jwt.ParseWithClaims(t, &MyClaims{}, func(token *jwt.Token) (interface{}, error) {
 			// hmacSampleSecret is a []byte containing your secret, e.g. []byte("my_secret_key")
 			return []byte(os.Getenv("SECRET")), nil
 		}, jwt.WithValidMethods([]string{jwt.SigningMethodHS512.Alg()}))
 
 		if err != nil {
-			log.Fatal(err)
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Your token is broken"})
 		}
 
-		if claims, ok := token.Claims.(*myClaims); ok {
+		if claims, ok := token.Claims.(*MyClaims); ok {
 			fmt.Println(claims)
 			c.JSON(http.StatusOK, gin.H{
 				"user":      claims.Subject,

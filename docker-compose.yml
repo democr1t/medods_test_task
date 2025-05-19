@@ -20,8 +20,6 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
-    volumes:
-      - postgres_data:/var/lib/postgresql/data  # Добавлен volume для сохранения данных
 
   auth-api:
     build:
@@ -41,6 +39,3 @@ services:
       postgres:
         condition: service_healthy
     restart: unless-stopped  # Добавлено автоматическое перезапускание при падении
-
-volumes:
-  postgres_data:  # Объявление volume для PostgreSQL

@@ -10,7 +10,8 @@ type User struct {
 }
 
 type RefreshTokens struct {
-	UserID       uuid.UUID `gorm:"primaryKey;type:uuid;not null;index;constraint:OnUpdate:CASCADE,OnDelete:CASCADE"`
+	ID           uuid.UUID `gorm:"type:uuid;primaryKey;"`
+	UserID       uuid.UUID `gorm:"type:uuid;not null;index"`
 	RefreshToken string    `gorm:"type:varchar(512);not null"`
 	IsRevoked    bool      `gorm:"default:false;not null"`
 	User         User      `gorm:"foreignKey:UserID;references:ID"`

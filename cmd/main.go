@@ -43,6 +43,7 @@ func main() {
 	r.GET("/users/myid", middlewares.CreateAuthMiddleware(db), handlers.GetMyIDHandler(db))
 
 	r.GET("/tokens/:user_id", handlers.CreateGetTokensHandler(db, tokenMaker))
+	r.GET("/tokens/refresh", handlers.CreateRefreshTokensHandler(db, tokenMaker))
 	r.GET("/logout", handlers.CreateLogoutHandler(db))
 
 	//r.GET("/users/:id", handlers.GetUserHandler(db))
