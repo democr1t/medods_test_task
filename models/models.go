@@ -4,7 +4,8 @@ import (
 	"github.com/google/uuid"
 )
 
-// User модель с UUID в качестве первичного ключа
+// User represents application user model
+// @Description User account information
 type User struct {
 	ID uuid.UUID `gorm:"type:uuid;primaryKey;"`
 }

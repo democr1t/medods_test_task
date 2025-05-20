@@ -1,7 +1,9 @@
 package handlers
 
 import (
+	"bytes"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
@@ -15,6 +17,11 @@ import (
 	"time"
 )
 
+type IPChangeRequest struct {
+	UserUUID string `json:"userUUID"`
+	OldIP    string `json:"oldIP"`
+	NewIP    string `json:"newIP"`
+}
 type MyClaims struct {
 	Ip        string `json:"ip"`
 	USERAGENT string `json:"useragent"`
@@ -25,6 +32,7 @@ type TokenMaker interface {
 	CreateToken(tokenUUID string, userID string, ip string, USERAGENT string, duration time.Duration) (string, error)
 }
 
+// TokenResponse represents successful token generation response
 type TokenResponse struct {
 	AccessToken  string `json:"access_token"`
 	RefreshToken string `json:"refresh_token"`
@@ -57,7 +65,17 @@ func (maker *JWTMaker) CreateToken(tokenUUID string, userID string, ip string, U
 	return tokenString, nil
 }
 
-// CreateGetTokensHandler создает пару токенов для пользователя
+// @Summary Get new access and refresh tokens
+// @Description Generates new JWT access token and refresh token for authenticated user. Requires valid user ID.
+// @Tags Auth
+// @Accept json
+// @Produce json
+// @Param user_id path string true "User UUID"
+// @Success 200 {object} TokenResponse
+// @Failure 400 {object} map[string]string "error: Invalid user ID format"
+// @Failure 404 {object} map[string]string "error: User not found / tokens already exists"
+// @Failure 500 {object} map[string]string "error: Failed to create tokens/session"
+// @Router /tokens/{user_id} [get]
 func CreateGetTokensHandler(db *gorm.DB, tokenMaker TokenMaker) gin.HandlerFunc {
 	slog.Debug("tokens handler initialized")
 	return func(c *gin.Context) {
@@ -136,6 +154,18 @@ func CreateGetTokensHandler(db *gorm.DB, tokenMaker TokenMaker) gin.HandlerFunc 
 	}
 }
 
+// @Summary Refresh authentication tokens
+// @Description Refreshes access and refresh tokens using valid refresh token. Invalidates old tokens and issues new ones.
+// @Tags Auth
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Success 200 {object} TokenResponse
+// @Failure 400 {object} map[string]string "error: Failed to decode refresh token"
+// @Failure 401 {object} map[string]string "error: No access/refresh token cookie | User agent invalidated | Invalid refresh token"
+// @Failure 404 {object} map[string]string "error: You need to auth on /tokens first"
+// @Failure 500 {object} map[string]string "error: Failed to fetch/parse tokens | Failed to create tokens/session"
+// @Router /refresh [post]
 func CreateRefreshTokensHandler(db *gorm.DB, tokenMaker TokenMaker) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		accessTokenStr, err := c.Cookie("access")
@@ -171,11 +201,31 @@ func CreateRefreshTokensHandler(db *gorm.DB, tokenMaker TokenMaker) gin.HandlerF
 			return
 		}
 
+		userID := accessClaims.Subject
+		userUUID, _ := uuid.Parse(userID)
+		slog.Debug("user id from claims:", userID)
+
 		if accessClaims.USERAGENT != c.Request.UserAgent() {
 			c.SetCookie("access", "", -1, "/", "", true, true)
 			c.SetCookie("refresh", "", -1, "/", "", true, true)
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "User agent invalidated"})
 			return
+		}
+
+		if accessClaims.Ip != c.ClientIP() {
+			notificationData := IPChangeRequest{
+				UserUUID: userID,
+				OldIP:    accessClaims.Ip,
+				NewIP:    c.ClientIP(),
+			}
+
+			jsonData, _ := json.Marshal(notificationData)
+
+			_, err = http.Post(os.Getenv("Webhook"), "application/json", bytes.NewBuffer(jsonData))
+
+			if err != nil {
+				slog.Error("Failed to notify about new ip address", "err", err, "ip", c.ClientIP(), "old ip", accessClaims.Ip)
+			}
 		}
 
 		tx := db.Begin()
@@ -191,7 +241,6 @@ func CreateRefreshTokensHandler(db *gorm.DB, tokenMaker TokenMaker) gin.HandlerF
 			return
 		}
 
-		//if ok -> tx delete refresh token, refresh access and refreshTokenStr in cookies and database
 		decoded, err := base64.URLEncoding.DecodeString(refreshTokenStr)
 		slog.Debug("refreshToken decoded", "token", decoded)
 		if err != nil {
@@ -212,15 +261,7 @@ func CreateRefreshTokensHandler(db *gorm.DB, tokenMaker TokenMaker) gin.HandlerF
 			return
 		}
 
-		userID := accessClaims.Subject
-		slog.Debug("user id from claims:", userID)
 		slog.Debug("deleting token from db")
-
-		userUUID, _ := uuid.Parse(userID)
-
-		//var refreshTokenToDeleteDB = models.RefreshTokens{
-		//	UserID: userUUID,
-		//}
 
 		if err = db.Where("user_id = ?", userUUID).Delete(&models.RefreshTokens{}).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process refresh operation"})
@@ -283,39 +324,6 @@ func CreateRefreshTokensHandler(db *gorm.DB, tokenMaker TokenMaker) gin.HandlerF
 		tx.Commit()
 		c.JSON(http.StatusOK, response)
 
-	}
-}
-
-func CreateLogoutHandler(db *gorm.DB) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		//already validated in middleware
-		accessTokenStr, _ := c.Cookie("access")
-
-		_, claims, err := TokenFromCookie(accessTokenStr)
-
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch access token"})
-			return
-		}
-
-		userUUID, _ := uuid.Parse(claims.Subject)
-
-		var refreshTokenDB models.RefreshTokens
-
-		if db.First(&refreshTokenDB, "user_id = ?", userUUID).Error != nil {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "No refresh token found"})
-			return
-		}
-		c.SetSameSite(http.SameSiteLaxMode)
-
-		if db.Delete(&refreshTokenDB).Error != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to logout"})
-			slog.Error("failed to logout", "err", err)
-		}
-
-		c.SetCookie("access", "", -1, "/", "", true, true)
-		c.SetCookie("refresh", "", -1, "/", "", true, true)
-		c.JSON(200, gin.H{"message": "logout successfully"})
 	}
 }
 

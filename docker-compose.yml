@@ -32,6 +32,7 @@ services:
     ports:
       - "8080:8080"
     environment:
+      WebHook: "localhost:9999/notify"
       PORT: 8080
       DSN: "host=postgres user=postgres password=postgres dbname=auth port=5432 sslmode=disable"
       SECRET: "b4f3d6bf694265845787912b16489d717d1ad2783249f0714597b14243889bcaadb9ad80268b26e8d0b8b5d5a2b80703070f61ee2ce529d17195d71fd8c8d78e"

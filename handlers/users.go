@@ -12,12 +12,17 @@ import (
 	"os"
 )
 
-// CreateUserHandler создает нового пользователя
+// @Summary Create new user
+// @Description Creates a new user with auto-generated UUID
+// @Tags Users
+// @Accept json
+// @Produce json
+// @Success 201 {object} models.User "Successfully created user"
+// @Failure 500 {object} map[string]string "error: Failed to create user"
+// @Router /users [post]
 func CreateUserHandler(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var user models.User
-
-		// Генерируем новый UUID для пользователя
 		user.ID = uuid.New()
 
 		if err := db.Create(&user).Error; err != nil {
@@ -29,7 +34,13 @@ func CreateUserHandler(db *gorm.DB) gin.HandlerFunc {
 	}
 }
 
-// ListUsersHandler возвращает список всех пользователей
+// @Summary Get all users
+// @Description Retrieves list of all registered users
+// @Tags Users
+// @Produce json
+// @Success 200 {array} models.User "List of users"
+// @Failure 500 {object} map[string]string "error: Failed to fetch users"
+// @Router /users [get]
 func ListUsersHandler(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var users []models.User
@@ -43,31 +54,15 @@ func ListUsersHandler(db *gorm.DB) gin.HandlerFunc {
 	}
 }
 
-// GetUserHandler возвращает пользователя по ID
-func GetUserHandler(db *gorm.DB) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		userID := c.Param("id")
-
-		uuidUserID, err := uuid.Parse(userID)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user ID format"})
-			return
-		}
-
-		var user models.User
-		if err := db.First(&user, "id = ?", uuidUserID).Error; err != nil {
-			if err == gorm.ErrRecordNotFound {
-				c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
-			} else {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch user"})
-			}
-			return
-		}
-
-		c.JSON(http.StatusOK, user)
-	}
-}
-
+// @Summary Get current user ID
+// @Description Returns authenticated user's ID and session info from JWT token
+// @Tags Users
+// @Produce json
+// @Security CookieAuth
+// @Success 200 {object} map[string]string "user: User UUID, ip: Client IP, useragent: User-Agent"
+// @Failure 400 {object} map[string]string "error: Access cookie not present | Your token is broken"
+// @Failure 401 {object} map[string]string "error: Invalid token"
+// @Router /me [get]
 func GetMyIDHandler(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		t, err := c.Cookie("access")
@@ -77,7 +72,7 @@ func GetMyIDHandler(db *gorm.DB) gin.HandlerFunc {
 		}
 
 		token, err := jwt.ParseWithClaims(t, &MyClaims{}, func(token *jwt.Token) (interface{}, error) {
-			// hmacSampleSecret is a []byte containing your secret, e.g. []byte("my_secret_key")
+
 			return []byte(os.Getenv("SECRET")), nil
 		}, jwt.WithValidMethods([]string{jwt.SigningMethodHS512.Alg()}))
 
@@ -96,6 +91,5 @@ func GetMyIDHandler(db *gorm.DB) gin.HandlerFunc {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token"})
 			slog.Debug(err.Error())
 		}
-
 	}
 }
