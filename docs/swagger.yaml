@@ -1,0 +1,137 @@
+definitions:
+  handlers.TokenResponse:
+    properties:
+      access_token:
+        type: string
+      refresh_token:
+        type: string
+    type: object
+info:
+  contact:
+    email: d.kruteevz@gmail.com
+    name: Dmitry
+  license:
+    name: Apache 2.0
+    url: http://www.apache.org/licenses/LICENSE-2.0.html
+paths:
+  /logout:
+    post:
+      consumes:
+      - application/json
+      description: Logs out the user by deleting refresh token and clearing cookies
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 'message: logout successfully'
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: 'error: Failed to parse access token'
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: 'error: Refresh token not found, you need to login first'
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: 'error: failed to logout'
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Logout user
+      tags:
+      - Auth
+  /refresh:
+    post:
+      consumes:
+      - application/json
+      description: Refreshes access and refresh tokens using valid refresh token.
+        Invalidates old tokens and issues new ones.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.TokenResponse'
+        "400":
+          description: 'error: Failed to decode refresh token'
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: 'error: No access/refresh token cookie | User agent invalidated
+            | Invalid refresh token'
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: 'error: You need to auth on /tokens first'
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: 'error: Failed to fetch/parse tokens | Failed to create tokens/session'
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Refresh authentication tokens
+      tags:
+      - Auth
+  /tokens/{user_id}:
+    get:
+      consumes:
+      - application/json
+      description: Generates new JWT access token and refresh token for authenticated
+        user. Requires valid user ID.
+      parameters:
+      - description: User UUID
+        in: path
+        name: user_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.TokenResponse'
+        "400":
+          description: 'error: Invalid user ID format'
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: 'error: User not found / tokens already exists'
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: 'error: Failed to create tokens/session'
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get new access and refresh tokens
+      tags:
+      - Auth
+swagger: "2.0"
