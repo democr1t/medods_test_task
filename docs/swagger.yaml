@@ -6,6 +6,12 @@ definitions:
       refresh_token:
         type: string
     type: object
+  models.User:
+    description: User account information
+    properties:
+      id:
+        type: string
+    type: object
 info:
   contact:
     email: d.kruteevz@gmail.com
@@ -134,4 +140,80 @@ paths:
       summary: Get new access and refresh tokens
       tags:
       - Auth
+  /users:
+    get:
+      description: Retrieves list of all registered users
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: List of users
+          schema:
+            items:
+              $ref: '#/definitions/models.User'
+            type: array
+        "500":
+          description: 'error: Failed to fetch users'
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get all users
+      tags:
+      - Users
+    post:
+      consumes:
+      - application/json
+      description: Creates a new user with auto-generated UUID
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Successfully created user
+          schema:
+            $ref: '#/definitions/models.User'
+        "500":
+          description: 'error: Failed to create user'
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Create new user
+      tags:
+      - Users
+  /users/myid:
+    get:
+      description: Returns authenticated user's ID and session info from JWT token
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 'user: User UUID, ip: Client IP, useragent: User-Agent'
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: 'error: Access cookie not present | Your token is broken'
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: 'error: Invalid token'
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - CookieAuth: []
+      summary: Get current user ID
+      tags:
+      - Users
+securityDefinitions:
+  CookieAuth:
+    description: JWT access token
+    in: cookie
+    name: access
+    type: apiKey
 swagger: "2.0"

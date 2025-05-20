@@ -32,7 +32,6 @@ type TokenMaker interface {
 	CreateToken(tokenUUID string, userID string, ip string, USERAGENT string, duration time.Duration) (string, error)
 }
 
-// TokenResponse represents successful token generation response
 type TokenResponse struct {
 	AccessToken  string `json:"access_token"`
 	RefreshToken string `json:"refresh_token"`
@@ -169,6 +168,7 @@ func CreateGetTokensHandler(db *gorm.DB, tokenMaker TokenMaker) gin.HandlerFunc 
 func CreateRefreshTokensHandler(db *gorm.DB, tokenMaker TokenMaker) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		accessTokenStr, err := c.Cookie("access")
+
 		if err != nil {
 			if errors.Is(err, http.ErrNoCookie) {
 				c.JSON(http.StatusUnauthorized, gin.H{"error": "No access token cookie"})
@@ -230,6 +230,7 @@ func CreateRefreshTokensHandler(db *gorm.DB, tokenMaker TokenMaker) gin.HandlerF
 
 		tx := db.Begin()
 		var refreshTokenDB models.RefreshTokens
+
 		if err := tx.First(&refreshTokenDB, "user_id = ?", accessClaims.Subject).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				c.JSON(http.StatusNotFound, gin.H{"error": "You need to auth on /tokens first"})
@@ -243,15 +244,18 @@ func CreateRefreshTokensHandler(db *gorm.DB, tokenMaker TokenMaker) gin.HandlerF
 
 		decoded, err := base64.URLEncoding.DecodeString(refreshTokenStr)
 		slog.Debug("refreshToken decoded", "token", decoded)
+
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to decode refresh token"})
 			slog.Error("Failed decode refresh token", "err", err)
 			tx.Rollback()
 			return
 		}
+
 		slog.Debug("comparing started")
 		err = bcrypt.CompareHashAndPassword([]byte(refreshTokenDB.RefreshToken), decoded)
 		slog.Debug("comparing ended")
+
 		if err != nil {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid refresh token"})
 			c.SetCookie("access", "", -1, "/", "", true, true)
@@ -272,8 +276,8 @@ func CreateRefreshTokensHandler(db *gorm.DB, tokenMaker TokenMaker) gin.HandlerF
 		slog.Debug("token deleted from db")
 
 		tokenUUID := uuid.NewString()
-
 		accessToken, err := tokenMaker.CreateToken(tokenUUID, userID, c.ClientIP(), c.Request.UserAgent(), 15*time.Minute)
+
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create access token"})
 			tx.Rollback()
@@ -315,7 +319,6 @@ func CreateRefreshTokensHandler(db *gorm.DB, tokenMaker TokenMaker) gin.HandlerF
 			return
 		}
 
-		// Формируем ответ
 		response := TokenResponse{
 			AccessToken:  accessToken,
 			RefreshToken: encoded,
@@ -323,13 +326,12 @@ func CreateRefreshTokensHandler(db *gorm.DB, tokenMaker TokenMaker) gin.HandlerF
 
 		tx.Commit()
 		c.JSON(http.StatusOK, response)
-
 	}
 }
 
 func TokenFromCookie(tokenStr string) (*jwt.Token, *MyClaims, error) {
 	token, err := jwt.ParseWithClaims(tokenStr, &MyClaims{}, func(token *jwt.Token) (interface{}, error) {
-		// hmacSampleSecret is a []byte containing your secret, e.g. []byte("my_secret_key")
+
 		return []byte(os.Getenv("SECRET")), nil
 	}, jwt.WithValidMethods([]string{jwt.SigningMethodHS512.Alg()}))
 

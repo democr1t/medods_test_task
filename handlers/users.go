@@ -62,7 +62,7 @@ func ListUsersHandler(db *gorm.DB) gin.HandlerFunc {
 // @Success 200 {object} map[string]string "user: User UUID, ip: Client IP, useragent: User-Agent"
 // @Failure 400 {object} map[string]string "error: Access cookie not present | Your token is broken"
 // @Failure 401 {object} map[string]string "error: Invalid token"
-// @Router /me [get]
+// @Router /users/myid [get]
 func GetMyIDHandler(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		t, err := c.Cookie("access")

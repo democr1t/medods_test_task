@@ -9,7 +9,7 @@ services:
     image: postgres:latest
     container_name: medods_test
     networks:
-      - auth  # Добавлено подключение к сети
+      - auth
     environment:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: auth
@@ -39,4 +39,4 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    restart: unless-stopped  # Добавлено автоматическое перезапускание при падении
+    restart: unless-stopped 

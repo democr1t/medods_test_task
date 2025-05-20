@@ -35,9 +35,9 @@ func init() {
 func main() {
 
 	docs.SwaggerInfo.Title = "Medods auth test task"
-	docs.SwaggerInfo.Description = "Path of auth service for medods test task."
+	docs.SwaggerInfo.Description = "Part of auth service for medods test task."
 	docs.SwaggerInfo.Version = "1.0"
-	docs.SwaggerInfo.Host = "localhost"
+	docs.SwaggerInfo.Host = "localhost:8080"
 	docs.SwaggerInfo.Schemes = []string{"http"}
 
 	dsn := os.Getenv("DSN")
@@ -47,7 +47,7 @@ func main() {
 	}
 
 	slog.SetLogLoggerLevel(slog.LevelDebug)
-	// Автоматическая миграция с явным указанием внешних ключей
+
 	err = db.AutoMigrate(&models.User{}, &models.RefreshTokens{})
 
 	if err != nil {
